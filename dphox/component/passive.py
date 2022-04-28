@@ -269,7 +269,7 @@ class Interposer(Pattern):
         init_pos = np.zeros((n, 2))
         final_pos = np.zeros_like(init_pos)
         for idx in range(n):
-            radius = period_diff / 2 if not radius else radius
+            radius = radius or period_diff / 2
             angle_r = np.sign(period_diff) * np.arccos(1 - np.abs(period_diff) / 4 / radius)
             angled_length = np.abs(period_diff / np.sin(angle_r))
             x_length = np.abs(period_diff / np.tan(angle_r))
@@ -277,8 +277,10 @@ class Interposer(Pattern):
             path = Path(waveguide_w).segment(length=0).translate(dx=0, dy=period * idx)
             mid = int(np.ceil(n / 2))
             max_length_diff = (angled_length - x_length) * (mid - 1)
-            num_trombones = int(np.ceil(max_length_diff / 2 / (final_period - 3 * radius))) \
-                if not num_trombones else num_trombones
+            num_trombones = num_trombones or int(
+                np.ceil(max_length_diff / 2 / (final_period - 3 * radius))
+            )
+
             length_diff = (angled_length - x_length) * idx if idx < mid else (angled_length - x_length) * (n - 1 - idx)
             if not trombone_at_end:
                 for _ in range(num_trombones):
@@ -367,7 +369,7 @@ class Waveguide(Pattern):
                 if taper_l > 0 and taper_param is not None:
                     p.polynomial_taper(taper_l, taper_param, num_taper_evaluations)
         if symmetric:
-            if not length > 2 * np.sum(taper_ls):
+            if length <= 2 * np.sum(taper_ls):
                 raise ValueError(
                     f'Require length > 2 * np.sum(taper_ls) but got {length} <= {2 * np.sum(taper_ls)}')
             if taper_params is not None:
@@ -377,9 +379,9 @@ class Waveguide(Pattern):
                         p.polynomial_taper(taper_l, taper_param, num_taper_evaluations, inverted=True)
             else:
                 p.segment(length)
+        elif length < np.sum(taper_ls):
+            raise ValueError(f'Require length >= np.sum(taper_ls) but got {length} < {np.sum(taper_ls)}')
         else:
-            if not length >= np.sum(taper_ls):
-                raise ValueError(f'Require length >= np.sum(taper_ls) but got {length} < {np.sum(taper_ls)}')
             p.segment(length - np.sum(taper_ls))
 
         if rotate_angle is not None:
@@ -464,7 +466,7 @@ class DelayLine(Pattern):
 
         bend_dir = -1 if flip else 1
 
-        for count in range(number_bend_pairs):
+        for _ in range(number_bend_pairs):
             p.turn(radius=bend_radius, angle=np.pi * bend_dir)
             p.segment(length=segment_length)
             p.turn(radius=bend_radius, angle=-np.pi * bend_dir)

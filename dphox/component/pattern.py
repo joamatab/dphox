@@ -39,7 +39,7 @@ class Path(gy.Path):
     def sbend(self, bend_dim: Union[Dim2, Dim3], layer: int = 0, inverted: bool = False, use_radius: bool = False):
         curr_width = 2 * self.w
         final_width = bend_dim[-1] if len(bend_dim) == 3 else curr_width
-        if use_radius is False:
+        if not use_radius:
             pole_1 = np.asarray((bend_dim[0] / 2, 0))
             pole_2 = np.asarray((bend_dim[0] / 2, (-1) ** inverted * bend_dim[1]))
             pole_3 = np.asarray((bend_dim[0], (-1) ** inverted * bend_dim[1]))
@@ -50,11 +50,10 @@ class Path(gy.Path):
                 angle = np.pi / 2 * (-1) ** inverted
                 self.turn(bend_dim[0], angle, final_width=halfway_final_width, number_of_points=199)
                 self.segment(bend_dim[1] - 2 * bend_dim[0])
-                self.turn(bend_dim[0], -angle, final_width=final_width, number_of_points=199)
             else:
                 angle = np.arccos(1 - bend_dim[1] / 2 / bend_dim[0]) * (-1) ** inverted
                 self.turn(bend_dim[0], angle, final_width=final_width, number_of_points=199)
-                self.turn(bend_dim[0], -angle, final_width=final_width, number_of_points=199)
+            self.turn(bend_dim[0], -angle, final_width=final_width, number_of_points=199)
         return self
 
     def dc(self, bend_dim: Union[Dim2, Dim3], interaction_l: float, end_l: float = 0, layer: int = 0,
@@ -150,9 +149,8 @@ class Pattern:
     def _shapely(self) -> MultiPolygon:
         if not self.call_union:
             return MultiPolygon(self.polys)
-        else:
-            pattern = cascaded_union(self.polys)
-            return pattern if isinstance(pattern, MultiPolygon) else MultiPolygon([pattern])
+        pattern = cascaded_union(self.polys)
+        return pattern if isinstance(pattern, MultiPolygon) else MultiPolygon([pattern])
 
     def mask(self, shape: Shape, grid_spacing: GridSpacing) -> np.ndarray:
         """Pixelized mask used for simulating this component
@@ -255,8 +253,14 @@ class Pattern:
 
         """
         x = self.bounds[0] if left else self.bounds[2]
-        p = c if isinstance(c, float) or isinstance(c, int) \
-            else (c.bounds[0] if left and not opposite or opposite and not left else c.bounds[2])
+        p = (
+            c
+            if isinstance(c, (float, int))
+            else c.bounds[0]
+            if left and not opposite or opposite and not left
+            else c.bounds[2]
+        )
+
         self.translate(dx=p - x)
         return self
 
@@ -273,8 +277,14 @@ class Pattern:
 
         """
         y = self.bounds[1] if bottom else self.bounds[3]
-        p = c if isinstance(c, float) or isinstance(c, int) \
-            else (c.bounds[1] if bottom and not opposite or opposite and not bottom else c.bounds[3])
+        p = (
+            c
+            if isinstance(c, (float, int))
+            else c.bounds[1]
+            if bottom and not opposite or opposite and not bottom
+            else c.bounds[3]
+        )
+
         self.translate(dy=p - y)
         return self
 
@@ -316,7 +326,7 @@ class Pattern:
 
         """
         self.shapely = rotate(self.shapely, angle, origin)
-        self.polys = [poly for poly in self.shapely]
+        self.polys = list(self.shapely)
         # any patterns in this pattern should also be rotated
         for pattern in self.reference_patterns:
             pattern.rotate(angle, origin)
@@ -404,7 +414,7 @@ class Pattern:
             else:
                 pattern = copy(self)
             patterns.append((pattern.align(self), metal_layer))
-        return [(pattern, metal_layer) for pattern, metal_layer in patterns]
+        return list(patterns)
 
     def dope(self, dope_layer: str, dope_grow: float = 0.1):
         return self.copy.offset(dope_grow), dope_layer
@@ -453,10 +463,7 @@ class Pattern:
 
 
 def cubic_taper(change_w, off: bool = False) -> Tuple[float, ...]:
-    if off:
-        return 0, change_w  # quick hack to change to linear taper
-    else:
-        return 0, 0, 3 * change_w, -2 * change_w
+    return (0, change_w) if off else (0, 0, 3 * change_w, -2 * change_w)
 
 
 def is_adiabatic(taper_params, init_width: float = 0.48, wavelength: float = 1.55, neff: float = 2.75,

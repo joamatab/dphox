@@ -64,7 +64,14 @@ class MZI(Multilayer):
         final_coupler = coupler.copy.to(port['b0'])
         patterns.append(final_coupler)
 
-        pattern_to_layer = sum([[(p, ridge)] if isinstance(p, Pattern) else p.pattern_to_layer for p in patterns], [])
+        pattern_to_layer = sum(
+            (
+                [(p, ridge)] if isinstance(p, Pattern) else p.pattern_to_layer
+                for p in patterns
+            ),
+            [],
+        )
+
 
         super(MZI, self).__init__(pattern_to_layer)
 
@@ -117,7 +124,7 @@ class Mesh(Multilayer):
             cols.append(mzi.bottom_arm.copy)
             paths.append(MultilayerPath(self.mzi.waveguide_w, cols, self.mzi.ridge).to(ports[idx], 'a0'))
 
-        pattern_to_layer = sum([path.pattern_to_layer for path in paths], [])
+        pattern_to_layer = sum((path.pattern_to_layer for path in paths), [])
         super(Mesh, self).__init__(pattern_to_layer)
         self.port = {
             f'a{i}': Port(0, i * mzi.interport_distance, -np.pi) for i in range(n)
@@ -154,7 +161,7 @@ class Mesh(Multilayer):
 
         """
         if ps_layer in self.layer_to_pattern:
-            return [ps for ps in self.layer_to_pattern[ps_layer].geoms]
+            return list(self.layer_to_pattern[ps_layer].geoms)
         else:
             raise ValueError(f'The phase shifter layer {ps_layer} is not correct '
                              f'or there is no phase shifter in this mesh')

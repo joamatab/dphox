@@ -57,7 +57,7 @@ class Multilayer:
         multilayers = defaultdict(list)
         for named_tuple in nd.cell_iter(cell, flat=True):
             if named_tuple.cell_start:
-                for i, (polygon, points, bbox) in enumerate(named_tuple.iters['polygon']):
+                for polygon, points, bbox in named_tuple.iters['polygon']:
                     if polygon.layer == 'bb_pin':
                         continue
                     # fixing point definitions from mask to 1nm prcesision,
@@ -307,7 +307,16 @@ class Multilayer:
             layer_to_polys[layer].extend(component.polys)
         pattern_dict = {layer: MultiPolygon(polys) for layer, polys in layer_to_polys.items()}
         # TODO: temporary way to assign ports
-        port = dict(sum([list(pattern.port.items()) for pattern, _ in self.pattern_to_layer], []))
+        port = dict(
+            sum(
+                (
+                    list(pattern.port.items())
+                    for pattern, _ in self.pattern_to_layer
+                ),
+                [],
+            )
+        )
+
         return pattern_dict, port
 
     def add(self, pattern: Pattern, layer: str):
@@ -396,7 +405,7 @@ class Multilayer:
                 process_extrusion: Optional[Dict[str, List[Tuple[str, str, str]]]] = None,
                 layer_to_color: Optional[Dict[str, str]] = None, engine: str = 'scad',
                 layers: Optional[List[str]] = None,
-                include_oxide: bool = True,):  # TODO:simplify how filled oxide/material should be handled with/without process extrsusions
+                include_oxide: bool = True,):    # TODO:simplify how filled oxide/material should be handled with/without process extrsusions
         """Exports layer by layer stls representing a psuedo fabrication of the multilayer"
             Args:
                 prefix: A string prepending the output stl layers. "{prefix}_{layer}.stl"
@@ -409,9 +418,7 @@ class Multilayer:
         """
         meshes = self.to_trimesh_dict(layer_to_zrange, process_extrusion, layer_to_color, engine, include_oxide)
         for layer, mesh in meshes.items():
-            if layers is None:
-                mesh.export(f'{prefix}_{layer}.stl')
-            elif layers and layer in layers:
+            if layers is None or layers and layer in layers:
                 mesh.export(f'{prefix}_{layer}.stl')
 
     def to_trimesh_scene(self, layer_to_zrange: Dict[str, Tuple[float, float]],
@@ -472,7 +479,7 @@ class Multilayer:
                     continue
                 extrusion_zrange = (float(old_elevation), float(new_elevation))
                 extrusion_pattern = Pattern(topo_map_dict[new_elevation], call_union=False).intersection(Pattern(old_topo_map_dict[old_elevation], call_union=False)).shapely
-                new_layer = layer + '_' + _um_str(old_elevation) + '_' + _um_str(new_elevation)
+                new_layer = f'{layer}_{_um_str(old_elevation)}_{_um_str(new_elevation)}'
                 if extrusion_pattern.geoms:
                     pattern_shapely = cascaded_union(extrusion_pattern.geoms)
                     pattern_shapely = MultiPolygon([pattern_shapely]) if isinstance(pattern_shapely, Polygon) else pattern_shapely
@@ -583,9 +590,7 @@ class Multilayer:
                     layer_to_extrusion = self._update_layer_to_extrusion(layer, heights, topo_map_dict, old_topo_map_dict, layer_to_extrusion)
 
                     # TODO: for debugging, need to remove
-                    topo_list = []
-                    for layer, pattern in topo_map_dict.items():
-                        topo_list.append((pattern, layer))
+                    topo_list = [(pattern, layer) for layer, pattern in topo_map_dict.items()]
                     self.topo_evolution.append(Multilayer(topo_list))
         self.topo = Multilayer(topo_list)
 
@@ -608,7 +613,7 @@ class Multilayer:
 
     @classmethod
     def aggregate(cls, multilayers: List["Multilayer"]):
-        return cls(sum([m.pattern_to_layer for m in multilayers], []))
+        return cls(sum((m.pattern_to_layer for m in multilayers), []))
 
 
 class MultilayerPath(Multilayer):
@@ -626,13 +631,20 @@ class MultilayerPath(Multilayer):
         port = None
         for p in sequence:
             if p is not None:
-                d = p if isinstance(p, Multilayer) or isinstance(p, Pattern) else Waveguide(waveguide_w, p)
+                d = p if isinstance(p, (Multilayer, Pattern)) else Waveguide(waveguide_w, p)
                 if port is None:
                     patterns.append(d.to(Port(0, 0), 'a0'))
                 else:
                     patterns.append(d.to(port, 'a0'))
                 port = d.port['b0']
-        pattern_to_layer = sum([[(p, path_layer)] if isinstance(p, Pattern) else p.pattern_to_layer for p in patterns], [])
+        pattern_to_layer = sum(
+            (
+                [(p, path_layer)] if isinstance(p, Pattern) else p.pattern_to_layer
+                for p in patterns
+            ),
+            [],
+        )
+
         super(MultilayerPath, self).__init__(pattern_to_layer)
         self.port['a0'] = Port(0, 0, -np.pi)
         self.port['b0'] = port
@@ -686,10 +698,12 @@ class Via(Multilayer):
         max_boundary_grow = max(boundary_grow)
         via_pattern = Box(via_dim, decimal_places=2)
         if pitch > 0 and shape is not None:
-            patterns = []
             x, y = np.meshgrid(np.arange(shape[0]) * pitch, np.arange(shape[1]) * pitch)
-            for x, y in zip(x.flatten(), y.flatten()):
-                patterns.append(via_pattern.copy.translate(x, y))
+            patterns = [
+                via_pattern.copy.translate(x, y)
+                for x, y in zip(x.flatten(), y.flatten())
+            ]
+
             via_pattern = Pattern(*patterns, decimal_places=2)
         boundary = Box((via_pattern.size[0] + 2 * max_boundary_grow,
                         via_pattern.size[1] + 2 * max_boundary_grow), decimal_places=2).align((0, 0)).halign(0)
